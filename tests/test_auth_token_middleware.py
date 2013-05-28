@@ -54,6 +54,7 @@ SIGNED_v3_TOKEN_UNSCOPED = None
 SIGNED_TOKEN_SCOPED_KEY = None
 SIGNED_TOKEN_UNSCOPED_KEY = None
 SIGNED_v3_TOKEN_SCOPED_KEY = None
+SIGNED_TOKEN_SCOPED_EXPIRED = None
 
 VALID_SIGNED_REVOCATION_LIST = None
 
@@ -253,6 +254,9 @@ def setUpModule(self):
     with open(os.path.join(signing_path, 'auth_token_revoked.pem')) as f:
         self.REVOKED_TOKEN = cms.cms_to_token(f.read())
     self.REVOKED_TOKEN_HASH = utils.hash_signed_token(self.REVOKED_TOKEN)
+    with open(os.path.join(signing_path,
+              'auth_token_scoped_expired.pem')) as f:
+        self.SIGNED_TOKEN_SCOPED_EXPIRED = cms.cms_to_token(f.read())
     with open(os.path.join(signing_path, 'auth_v3_token_revoked.pem')) as f:
         self.REVOKED_v3_TOKEN = cms.cms_to_token(f.read())
     self.REVOKED_v3_TOKEN_HASH = utils.hash_signed_token(self.REVOKED_v3_TOKEN)
@@ -414,7 +418,7 @@ class BaseFakeHTTPConnection(object):
         body = jsonutils.dumps({
             'access': {
                 'token': {'id': 'admin_token2',
-                          'expires': '2012-10-03T16:58:01Z'}
+                          'expires': '2022-10-03T16:58:01Z'}
             },
         })
         return status, body
@@ -571,6 +575,7 @@ class BaseAuthTokenMiddlewareTest(testtools.TestCase):
                 'uuid_token_default': UUID_TOKEN_DEFAULT,
                 'uuid_token_unscoped': UUID_TOKEN_UNSCOPED,
                 'signed_token_scoped': SIGNED_TOKEN_SCOPED,
+                'signed_token_scoped_expired': SIGNED_TOKEN_SCOPED_EXPIRED,
                 'revoked_token': REVOKED_TOKEN,
                 'revoked_token_hash': REVOKED_TOKEN_HASH
             }
@@ -941,6 +946,13 @@ class AuthTokenMiddlewareTest(test.NoModule, BaseAuthTokenMiddlewareTest):
         self.middleware(req.environ, self.start_fake_response)
         self.assertNotEqual(self._get_cached_token(token), None)
 
+    def test_expired(self):
+        req = webob.Request.blank('/')
+        token = self.token_dict['signed_token_scoped_expired']
+        req.headers['X-Auth-Token'] = token
+        self.middleware(req.environ, self.start_fake_response)
+        self.assertEqual(self.response_status, 401)
+
     def test_memcache_set_invalid(self):
         req = webob.Request.blank('/')
         token = 'invalid-token'
@@ -1302,6 +1314,7 @@ class v3AuthTokenMiddlewareTest(AuthTokenMiddlewareTest):
             'uuid_token_default': v3_UUID_TOKEN_DEFAULT,
             'uuid_token_unscoped': v3_UUID_TOKEN_UNSCOPED,
             'signed_token_scoped': SIGNED_v3_TOKEN_SCOPED,
+            'signed_token_scoped_expired': SIGNED_TOKEN_SCOPED_EXPIRED,
             'revoked_token': REVOKED_v3_TOKEN,
             'revoked_token_hash': REVOKED_v3_TOKEN_HASH
         }
