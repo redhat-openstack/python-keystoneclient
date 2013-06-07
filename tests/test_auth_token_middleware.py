@@ -27,7 +27,6 @@ import webob
 from keystoneclient.common import cms
 from keystoneclient import utils
 from keystoneclient.middleware import auth_token
-from keystoneclient.middleware import memcache_crypt
 from keystoneclient.openstack.common import memorycache
 from keystoneclient.openstack.common import jsonutils
 from keystoneclient.openstack.common import timeutils
@@ -935,9 +934,7 @@ class AuthTokenMiddlewareTest(test.NoModule, BaseAuthTokenMiddlewareTest):
     def _get_cached_token(self, token):
         token_id = cms.cms_hash_token(token)
         # NOTE(vish): example tokens are expired so skip the expiration check.
-        key = self.middleware._get_cache_key(token_id)
-        cached = self.middleware._cache.get(key)
-        return self.middleware._unprotect_cache_value(token, cached)
+        return self.middleware._cache_get(token_id, ignore_expires=True)
 
     def test_memcache(self):
         req = webob.Request.blank('/')
@@ -958,7 +955,8 @@ class AuthTokenMiddlewareTest(test.NoModule, BaseAuthTokenMiddlewareTest):
         token = 'invalid-token'
         req.headers['X-Auth-Token'] = token
         self.middleware(req.environ, self.start_fake_response)
-        self.assertEqual(self._get_cached_token(token), "invalid")
+        self.assertRaises(auth_token.InvalidUserToken,
+                          self._get_cached_token, token)
 
     def test_memcache_set_expired(self):
         token_cache_time = 10
@@ -1041,18 +1039,11 @@ class AuthTokenMiddlewareTest(test.NoModule, BaseAuthTokenMiddlewareTest):
             'memcache_secret_key': 'mysecret'
         }
         self.set_middleware(conf=conf)
-        encrypted_data = self.middleware._protect_cache_value(
-            'token', TOKEN_RESPONSES[self.token_dict['uuid_token_default']])
-        self.assertEqual('{ENCRYPT:AES256}', encrypted_data[:16])
-        self.assertEqual(
-            TOKEN_RESPONSES[self.token_dict['uuid_token_default']],
-            self.middleware._unprotect_cache_value('token', encrypted_data))
-        # should return None if unable to decrypt
-        self.assertIsNone(
-            self.middleware._unprotect_cache_value(
-                'token', '{ENCRYPT:AES256}corrupted'))
-        self.assertIsNone(
-            self.middleware._unprotect_cache_value('mykey', encrypted_data))
+        token = 'my_token'
+        data = ('this_data', 10e100)
+        self.middleware._init_cache({})
+        self.middleware._cache_store(token, data)
+        self.assertEqual(self.middleware._cache_get(token), data[0])
 
     def test_sign_cache_data(self):
         conf = {
@@ -1064,19 +1055,11 @@ class AuthTokenMiddlewareTest(test.NoModule, BaseAuthTokenMiddlewareTest):
             'memcache_secret_key': 'mysecret'
         }
         self.set_middleware(conf=conf)
-        signed_data = self.middleware._protect_cache_value(
-            'mykey', TOKEN_RESPONSES[self.token_dict['uuid_token_default']])
-        expected = '{MAC:SHA1}'
-        self.assertEqual(
-            signed_data[:10],
-            expected)
-        self.assertEqual(
-            TOKEN_RESPONSES[self.token_dict['uuid_token_default']],
-            self.middleware._unprotect_cache_value('mykey', signed_data))
-        # should return None on corrupted data
-        self.assertIsNone(
-            self.middleware._unprotect_cache_value('mykey',
-                                                   '{MAC:SHA1}corrupted'))
+        token = 'my_token'
+        data = ('this_data', 10e100)
+        self.middleware._init_cache({})
+        self.middleware._cache_store(token, data)
+        self.assertEqual(self.middleware._cache_get(token), data[0])
 
     def test_no_memcache_protection(self):
         conf = {
@@ -1087,47 +1070,11 @@ class AuthTokenMiddlewareTest(test.NoModule, BaseAuthTokenMiddlewareTest):
             'memcache_secret_key': 'mysecret'
         }
         self.set_middleware(conf=conf)
-        data = self.middleware._protect_cache_value('mykey',
-                                                    'This is a test!')
-        self.assertEqual(data, 'This is a test!')
-        self.assertEqual(
-            'This is a test!',
-            self.middleware._unprotect_cache_value('mykey', data))
-
-    def test_get_cache_key(self):
-        conf = {
-            'auth_host': 'keystone.example.com',
-            'auth_port': 1234,
-            'auth_admin_prefix': '/testadmin',
-            'memcache_servers': 'localhost:11211',
-            'memcache_secret_key': 'mysecret'
-        }
-        self.set_middleware(conf=conf)
-        self.assertEqual(
-            'tokens/mytoken',
-            self.middleware._get_cache_key('mytoken'))
-        conf = {
-            'auth_host': 'keystone.example.com',
-            'auth_port': 1234,
-            'auth_admin_prefix': '/testadmin',
-            'memcache_servers': 'localhost:11211',
-            'memcache_security_strategy': 'mac',
-            'memcache_secret_key': 'mysecret'
-        }
-        self.set_middleware(conf=conf)
-        expected = 'tokens/' + memcache_crypt.hash_data('mytoken' + 'mysecret')
-        self.assertEqual(self.middleware._get_cache_key('mytoken'), expected)
-        conf = {
-            'auth_host': 'keystone.example.com',
-            'auth_port': 1234,
-            'auth_admin_prefix': '/testadmin',
-            'memcache_servers': 'localhost:11211',
-            'memcache_security_strategy': 'Encrypt',
-            'memcache_secret_key': 'abc!'
-        }
-        self.set_middleware(conf=conf)
-        expected = 'tokens/' + memcache_crypt.hash_data('mytoken' + 'abc!')
-        self.assertEqual(self.middleware._get_cache_key('mytoken'), expected)
+        token = 'my_token'
+        data = ('this_data', 10e100)
+        self.middleware._init_cache({})
+        self.middleware._cache_store(token, data)
+        self.assertEqual(self.middleware._cache_get(token), data[0])
 
     def test_assert_valid_memcache_protection_config(self):
         # test missing memcache_secret_key
