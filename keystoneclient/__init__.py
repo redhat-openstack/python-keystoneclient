@@ -13,10 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import pbr.version
-
-
-__version__ = pbr.version.VersionInfo('python-keystoneclient').version_string()
+__version__ = "REDHATKEYSTONECLIENTVERSION"
 
 __all__ = [
     # Modules
