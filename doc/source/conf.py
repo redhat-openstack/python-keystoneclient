@@ -46,7 +46,8 @@ extensions = ['sphinx.ext.autodoc',
               # NOTE(blk-u): Uncomment the [pbr] section in setup.cfg and
               # remove this Sphinx extension when
               # https://launchpad.net/bugs/1260495 is fixed.
-              'ext.apidoc',
+              # NOTE(jruzicka): This was breaking on epel-6 sphinx 1.0.8
+              #'ext.apidoc',
              ]
 
 todo_include_todos = True
